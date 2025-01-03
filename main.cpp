@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <memory>
 #include <exception>
-#include <stdexcept> // For standard exceptions
+#include <stdexcept>
+#include <chrono>
+#include <iomanip>
 
 using namespace std;
 
@@ -37,43 +39,11 @@ public:
     Carte(const string& titlu, const string& autor, int anPublicare)
         : titlu(titlu), autor(autor), anPublicare(anPublicare) {}
 
-    Carte(const Carte& other) : titlu(other.titlu), autor(other.autor), anPublicare(other.anPublicare) {}
-
-    Carte& operator=(const Carte& other) {
-        if (this != &other) {
-            titlu = other.titlu;
-            autor = other.autor;
-            anPublicare = other.anPublicare;
-        }
-        return *this;
-    }
-
     virtual void afisare() const {
         cout << "Titlu: " << titlu << ", Autor: " << autor << ", An publicare: " << anPublicare << endl;
     }
 
     [[nodiscard]] string getTitlu() const { return titlu; }
-
-    friend ostream& operator<<(ostream& os, const Carte& carte) {
-        os << "Titlu: " << carte.titlu << ", Autor: " << carte.autor << ", An publicare: " << carte.anPublicare;
-        return os;
-    }
-
-    friend istream& operator>>(istream& is, Carte& carte) {
-        cout << "Introduceti titlul: ";
-        is >> carte.titlu;
-        cout << "Introduceti autorul: ";
-        is >> carte.autor;
-        cout << "Introduceti anul publicarii: ";
-        is >> carte.anPublicare;
-        return is;
-    }
-
-    bool operator==(const Carte& other) const {
-        return titlu == other.titlu && autor == other.autor;
-    }
-
-    ~Carte() override = default;
 
     double calculeazaPenalitate(int zileIntarziere) const override {
         return zileIntarziere * 0.5; // Penalitate standard
@@ -124,23 +94,44 @@ public:
     }
 };
 
+class IstoricImprumut {
+public:
+    string titluCarte;
+    string dataImprumut;
+    string dataReturnare;
+
+    IstoricImprumut(const string& titlu, const string& imprumut, const string& returnare)
+        : titluCarte(titlu), dataImprumut(imprumut), dataReturnare(returnare) {}
+};
+
 // Clasă abstractă: Utilizator
 class Utilizator {
 protected:
     string nume;
     string email;
     string tipUtilizator;
-
+    double penalizari; // Nou câmp pentru penalități
+    vector<IstoricImprumut> istoriculImprumuturilor;
     static unordered_map<string, shared_ptr<Utilizator>> registruUtilizatori;
 
 public:
     Utilizator(const string& nume, const string& email, const string& tipUtilizator)
-        : nume(nume), email(email), tipUtilizator(tipUtilizator) {}
+        : nume(nume), email(email), tipUtilizator(tipUtilizator), penalizari(0) {} // Inițializare penalități
 
-    virtual void afisare() const {
-        cout << "Nume: " << nume << ", Email: " << email << ", Tip utilizator: " << tipUtilizator << endl;
+    // Metodă pentru a adăuga penalități
+    virtual void adaugaPenalitate(double suma) {
+        penalizari += suma;
     }
 
+    // Metodă pentru a obține penalitățile
+    double getPenalizari() const {
+        return penalizari;
+    }
+
+    virtual void afisare() const {
+        cout << "Nume: " << nume << ", Email: " << email << ", Tip utilizator: " << tipUtilizator
+             << ", Penalitati: " << penalizari << " RON" << endl; // Afișează penalitățile
+    }
     string getEmail() const { return email; }
 
     virtual int limitaImprumuturi() const = 0;
@@ -150,6 +141,19 @@ public:
             return registruUtilizatori[email];
         }
         return nullptr;
+    }
+    void adaugaImprumut(const IstoricImprumut& imprumut) {
+        istoriculImprumuturilor.push_back(imprumut);
+    }
+
+    // Metodă pentru a afișa istoricul împrumuturilor
+    void afiseazaIstoriculImprumuturilor() const {
+        cout << "Istoricul imprumuturilor pentru " << nume << ":\n";
+        for (const auto& imprumut : istoriculImprumuturilor) {
+            cout << "Titlu: " << imprumut.titluCarte
+                 << ", Data imprumut: " << imprumut.dataImprumut
+                 << ", Data returnare: " << imprumut.dataReturnare << endl;
+        }
     }
 
     virtual ~Utilizator() = default;
@@ -223,7 +227,7 @@ public:
         return numarTotalImprumuturi;
     }
 
-    virtual double calculeazaPenalitate(int zileIntarziere) const = 0;
+    virtual double calculeazaPenalitate(const string& returnare) const = 0;
 
     virtual ~ImprumutAbstract() = default;
 };
@@ -239,10 +243,28 @@ private:
 
 public:
     ImprumutCarteFizica(const string& imprumut, const string& returnare, const CarteFizica& carte, Utilizator& utilizator)
-        : ImprumutAbstract(genereazaID(), imprumut, returnare), carte(carte), utilizator(utilizator) {}
+        : ImprumutAbstract(genereazaID(), imprumut, returnare), carte(carte), utilizator(utilizator) {
+        utilizator.adaugaImprumut(IstoricImprumut(carte.getTitlu(), imprumut, returnare)); // Adaugarea în istoric
+    }
+    double calculeazaPenalitate(const string& returnare) const override {
+        // Conversie string -> data
+        tm dataImprumutTM = {}, dataReturnareTM = {};
+        istringstream ssImprumut(dataImprumut);
+        istringstream ssReturnare(returnare);
+        ssImprumut >> get_time(&dataImprumutTM, "%Y-%m-%d");
+        ssReturnare >> get_time(&dataReturnareTM, "%Y-%m-%d");
 
-    double calculeazaPenalitate(int zileIntarziere) const override {
-        return carte.calculeazaPenalitate(zileIntarziere);
+        auto imprumutDate = chrono::system_clock::from_time_t(mktime(&dataImprumutTM));
+        auto returnareDate = chrono::system_clock::from_time_t(mktime(&dataReturnareTM));
+
+        auto diff = chrono::duration_cast<chrono::days>(returnareDate - imprumutDate).count();
+
+        if (diff > 14) {
+            double penalitate = (diff - 14) * carte.calculeazaPenalitate(1); // Calcul penalitate
+            utilizator.adaugaPenalitate(penalitate); // Aplica penalitatea utilizatorului
+            return penalitate;
+        }
+        return 0;
     }
 
     void afisare() const {
@@ -263,10 +285,26 @@ private:
 
 public:
     ImprumutCarteDigitala(const string& imprumut, const string& returnare, const CarteDigitala& carte, Utilizator& utilizator)
-        : ImprumutAbstract(genereazaID(), imprumut, returnare), carte(carte), utilizator(utilizator) {}
+        : ImprumutAbstract(genereazaID(), imprumut, returnare), carte(carte), utilizator(utilizator) {
+        utilizator.adaugaImprumut(IstoricImprumut(carte.getTitlu(), imprumut, returnare)); // Adaugarea în istoric
+    }
+    double calculeazaPenalitate(const string& returnare) const override {
+        // Conversie string -> data
+        tm dataImprumutTM = {}, dataReturnareTM = {};
+        istringstream ssImprumut(dataImprumut);
+        istringstream ssReturnare(returnare);
+        ssImprumut >> get_time(&dataImprumutTM, "%Y-%m-%d");
+        ssReturnare >> get_time(&dataReturnareTM, "%Y-%m-%d");
 
-    double calculeazaPenalitate(int zileIntarziere) const override {
-        return carte.calculeazaPenalitate(zileIntarziere);
+        auto imprumutDate = chrono::system_clock::from_time_t(mktime(&dataImprumutTM));
+        auto returnareDate = chrono::system_clock::from_time_t(mktime(&dataReturnareTM));
+
+        auto diff = chrono::duration_cast<chrono::days>(returnareDate - imprumutDate).count();
+
+        if (diff > 14) {
+            return (diff - 14) * carte.calculeazaPenalitate(1); // Penalitate pentru fiecare zi de întârziere
+        }
+        return 0; // Fără penalitate dacă întârzierea este <= 14 zile
     }
 
     void afisare() const {
@@ -291,29 +329,29 @@ public:
     }
 
     const vector<T>& getCarti() const {
-    return colectie;
+        return colectie;
     }
 
     void afisare() const {
         for (const auto& elem : colectie) {
-            elem->afisare(); // Dereferențierea pointerului inteligent
+            elem->afisare(); // Afișare carte
             cout << endl;
         }
     }
 
     void sorteaza() {
         sort(colectie.begin(), colectie.end(), [](const T& a, const T& b) {
-            return a->getTitlu() < b->getTitlu(); // Dereferențierea pointerului inteligent
+            return a->getTitlu() < b->getTitlu(); // Sortare
         });
     }
 };
 
-
 // Design Pattern: Singleton for Library
 class BibliotecaSingleton {
 private:
-    BibliotecaSingleton() {}
     Biblioteca<shared_ptr<Carte>> biblioteca;
+
+    BibliotecaSingleton() {}
 
 public:
     BibliotecaSingleton(const BibliotecaSingleton&) = delete;
@@ -325,19 +363,15 @@ public:
     }
 
     const vector<shared_ptr<Carte>>& getCarti() const {
-    return biblioteca.getCarti();
+        return biblioteca.getCarti();
     }
 
     void adaugaCarte(const shared_ptr<Carte>& carte) {
         biblioteca.adauga(carte);
     }
 
-    void afisareCarti() {
+    void afisareCarti() const {
         biblioteca.afisare();
-    }
-
-    void sorteazaCarti() {
-        biblioteca.sorteaza();
     }
 };
 
@@ -363,6 +397,8 @@ void afiseazaMeniu() {
     cout << "4. Afiseaza utilizatori\n";
     cout << "5. Afiseaza carti\n";
     cout << "6. Afiseaza numar total de imprumuturi\n";
+    cout << "7. Afiseaza penalitatile utilizatorilor\n"; // Opțiune existentă
+    cout << "8. Vezi istoricul imprumuturilor unui utilizator\n"; // Noua opțiune
     cout << "0. Iesire\n";
     cout << "Alege o optiune: ";
 }
@@ -374,7 +410,6 @@ int main() {
         vector<shared_ptr<ImprumutAbstract>> imprumuturi;
 
         int optiune = -1;
-
         while (optiune != 0) {
             afiseazaMeniu();
             cin >> optiune;
@@ -480,8 +515,7 @@ int main() {
                     getline(cin, dataReturnare);
 
                     // Căutare carte
-                    auto& bibliotecaSingleton = BibliotecaSingleton::getInstance();
-                    const auto& carti = bibliotecaSingleton.getCarti(); // Obține colecția de cărți
+                    const auto& carti = biblioteca.getCarti(); // Obține colecția de cărți
                     bool carteGasita = false;
                     for (const auto& carte : carti) {
                         if (carte->getTitlu() == titluCarte) {
@@ -496,7 +530,6 @@ int main() {
                             break;
                         }
                     }
-
                     if (carteGasita) {
                         cout << "Imprumut creat cu succes!\n";
                     } else {
@@ -521,12 +554,33 @@ int main() {
                     cout << "Numar total de imprumuturi: " << ImprumutAbstract::getNumarTotalImprumuturi() << endl;
                     break;
                 }
+                case 7: { // Afișează penalitățile utilizatorilor
+                    cout << "\nPenalitățile utilizatorilor:\n";
+                    for (const auto& utilizator : utilizatori) {
+                        cout << "Utilizator: " << utilizator->getEmail() << ", Penalitate: " << utilizator->getPenalizari() << " RON" << endl;
+                    }
+                    break;
+                }
+                case 8: { // Vezi istoricul imprumuturilor unui utilizator
+                    cout << "Email utilizator: ";
+                    string emailUtilizator;
+                    getline(cin, emailUtilizator);
+
+                    auto utilizator = Utilizator::cautaUtilizator(emailUtilizator);
+                    if (!utilizator) {
+                        cout << "Utilizatorul nu a fost gasit!\n";
+                        break;
+                    }
+
+                    utilizator->afiseazaIstoriculImprumuturilor(); // Afișează istoricul împrumuturilor
+                    break;
+                }
                 case 0:
                     cout << "La revedere!\n";
-                    break;
+                break;
                 default:
                     cout << "Optiune invalida!\n";
-                    break;
+                break;
             }
         }
     } catch (const ImprumutException& ex) {
@@ -534,7 +588,6 @@ int main() {
     } catch (const exception& ex) {
         cout << "Eroare: " << ex.what() << endl;
     }
-
 
     return 0;
 }
