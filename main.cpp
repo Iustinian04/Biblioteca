@@ -22,7 +22,7 @@ public:
 // Penalitate (interfață abstractă)
 class Penalitate {
 public:
-    virtual double calculeazaPenalitate(int zileIntarziere) const = 0;
+    virtual double calculeazaPenalitate() const = 0; // Elimină parametrul
     virtual ~Penalitate() = default;
 };
 
@@ -45,8 +45,8 @@ public:
 
     [[nodiscard]] string getTitlu() const { return titlu; }
 
-    double calculeazaPenalitate(int zileIntarziere) const override {
-        return zileIntarziere * 0.5; // Penalitate standard
+    double calculeazaPenalitate() const override {
+        return 5; // Penalitate standard
     }
 };
 
@@ -65,8 +65,8 @@ public:
         cout << "Numar pagini: " << numarPagini << ", Stare fizica: " << stareFizica << endl;
     }
 
-    double calculeazaPenalitate(int zileIntarziere) const override {
-        double penalitate = zileIntarziere * 1.0;
+    double calculeazaPenalitate() const override {
+        double penalitate = 10 * 1.0;
         if (stareFizica == "uzata") {
             penalitate += 10;
         }
@@ -89,7 +89,7 @@ public:
         cout << "Dimensiune fisier: " << dimensiuneFisier << " MB, Format: " << format << endl;
     }
 
-    double calculeazaPenalitate(int zileIntarziere) const override {
+    double calculeazaPenalitate() const override {
         return 5.0; // Penalitate fixă pentru cărțile digitale
     }
 };
@@ -257,14 +257,16 @@ public:
         auto imprumutDate = chrono::system_clock::from_time_t(mktime(&dataImprumutTM));
         auto returnareDate = chrono::system_clock::from_time_t(mktime(&dataReturnareTM));
 
-        auto diff = chrono::duration_cast<chrono::days>(returnareDate - imprumutDate).count();
+        // Calculăm diferența în zile
+        auto diff = chrono::duration_cast<chrono::hours>(returnareDate - imprumutDate).count() / 24;
 
+        // Verificăm numărul de zile de întârziere față de perioada standard
         if (diff > 14) {
-            double penalitate = (diff - 14) * carte.calculeazaPenalitate(1); // Calcul penalitate
+            double penalitate = (diff - 14) * carte.calculeazaPenalitate(); // Calcul penalitate
             utilizator.adaugaPenalitate(penalitate); // Aplica penalitatea utilizatorului
             return penalitate;
         }
-        return 0;
+        return 0; // Nu se aplică penalitate dacă întârzierea este <= 14 zile
     }
 
     void afisare() const {
@@ -299,12 +301,12 @@ public:
         auto imprumutDate = chrono::system_clock::from_time_t(mktime(&dataImprumutTM));
         auto returnareDate = chrono::system_clock::from_time_t(mktime(&dataReturnareTM));
 
-        auto diff = chrono::duration_cast<chrono::days>(returnareDate - imprumutDate).count();
+        auto diff = chrono::duration_cast<chrono::hours>(returnareDate - imprumutDate).count() / 24;
 
         if (diff > 14) {
-            return (diff - 14) * carte.calculeazaPenalitate(1); // Penalitate pentru fiecare zi de întârziere
+            return (diff - 14) * carte.calculeazaPenalitate(); // Penalitate pentru fiecare zi de întârziere
         }
-        return 0; // Fără penalitate dacă întârzierea este <= 14 zile
+        return 0;
     }
 
     void afisare() const {
