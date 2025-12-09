@@ -1,5 +1,3 @@
-# Nu primesc notă pentru că nu am pus titlu și descriere
-
 ## Instrucțiuni de compilare
 
 Proiectul este configurat cu CMake.
